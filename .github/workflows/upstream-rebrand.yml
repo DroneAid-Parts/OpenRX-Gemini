@@ -123,18 +123,34 @@ jobs:
           and limitations in /home/user/rebrand-report.md.
           PROMPT
           )
-          result=$(boat prompt "$SANDBOX_ID" --provider claude --new --json "$prompt")
-          conversation_id=$(jq -r 'select(.conversationId != null) | .conversationId' <<< "$result" | tail -n1)
-          test -n "$conversation_id"
+          prompt_output=$(mktemp)
+          if ! boat prompt "$SANDBOX_ID" --provider claude --new --json "$prompt" > "$prompt_output" 2>&1; then
+            cat "$prompt_output" >&2
+            exit 1
+          fi
+          conversation_id=$(jq -sr '[.[] | select(.conversationId != null) | .conversationId][-1] // empty' "$prompt_output")
+          if [[ -z "$conversation_id" ]]; then
+            cat "$prompt_output" >&2
+            echo 'Boat did not return a Claude conversation ID.' >&2
+            exit 1
+          fi
           echo "conversation_id=$conversation_id" >> "$GITHUB_OUTPUT"
 
           for attempt in $(seq 1 360); do
-            conversations=$(boat conversations "$SANDBOX_ID" --json)
-            running=$(jq -r --arg id "$conversation_id" 'select(.id == $id) | .running' <<< "$conversations" | tail -n1)
-            if [[ "$running" == "false" ]]; then
-              exit 0
+            if ! conversations=$(boat conversations "$SANDBOX_ID" --json 2>&1); then
+              printf '%s\n' "$conversations" >&2
+              exit 1
             fi
-            sleep 10
+            running=$(jq -sr --arg id "$conversation_id" '[.[] | select(.id == $id) | .running][-1] // empty' <<< "$conversations")
+            case "$running" in
+              false) exit 0 ;;
+              true) sleep 10 ;;
+              *)
+                printf '%s\n' "$conversations" >&2
+                echo "Boat did not return status for Claude conversation $conversation_id." >&2
+                exit 1
+                ;;
+            esac
           done
           echo 'Claude did not finish within 60 minutes.' >&2
           exit 1
