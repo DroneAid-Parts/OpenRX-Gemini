@@ -41,7 +41,7 @@ jobs:
           git remote add upstream https://github.com/OpenDrone-hw/OpenRX-Gemini.git
           git fetch upstream main
           git fetch origin main
-          git switch --create automation/upstream-sync-rebrand origin/main
+          git switch --create ci/upstream-sync-rebrand origin/main
 
           if git merge-base --is-ancestor upstream/main HEAD; then
             if [[ "$FORCE_REBRAND" == "true" ]]; then
@@ -94,9 +94,9 @@ jobs:
         env:
           SANDBOX_ID: ${{ steps.sandbox.outputs.id }}
         run: |
-          git bundle create /tmp/source.bundle automation/upstream-sync-rebrand
+          git bundle create /tmp/source.bundle ci/upstream-sync-rebrand
           boat scp /tmp/source.bundle "$SANDBOX_ID:/home/user/source.bundle"
-          boat exec "$SANDBOX_ID" --timeout 120 -- bash -lc 'git clone --branch automation/upstream-sync-rebrand /home/user/source.bundle /home/user/repo'
+          boat exec "$SANDBOX_ID" --timeout 120 -- bash -lc 'git clone --branch ci/upstream-sync-rebrand /home/user/source.bundle /home/user/repo'
 
       - name: Run the PCB rebranding skill in Claude Code
         if: steps.sync.outputs.changed == 'true'
@@ -167,8 +167,19 @@ jobs:
           tar xzf /tmp/result.tar.gz -C /tmp/rebrand-result
           cp -a /tmp/rebrand-result/. .
 
-      - name: Open an upstream and rebrand pull request
+      - name: Check for upstream or branding changes
         if: steps.sync.outputs.changed == 'true' && steps.agent.outcome == 'success'
+        id: result
+        run: |
+          git fetch origin main
+          if git diff --quiet origin/main HEAD; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open an upstream and rebrand pull request
+        if: steps.sync.outputs.changed == 'true' && steps.agent.outcome == 'success' && steps.result.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
