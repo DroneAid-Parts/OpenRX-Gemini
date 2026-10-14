@@ -173,6 +173,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: automation/upstream-sync-rebrand
+          base: main
           delete-branch: true
           title: 'Sync upstream and maintain DroneAid rebrand'
           commit-message: 'Sync upstream and maintain DroneAid rebrand'
