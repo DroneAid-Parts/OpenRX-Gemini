@@ -141,7 +141,7 @@ jobs:
               printf '%s\n' "$conversations" >&2
               exit 1
             fi
-            running=$(jq -sr --arg id "$conversation_id" '[.[] | (.data // .) | select(.id == $id or .conversationId == $id) | .running][-1] // empty' <<< "$conversations")
+            running=$(jq -sr --arg id "$conversation_id" '[.[] | (.data // .) | select(.id == $id or .conversationId == $id) | .running][-1]' <<< "$conversations")
             case "$running" in
               false) exit 0 ;;
               true) sleep 10 ;;
