@@ -1,8 +1,12 @@
-# OpenRX Gemini
+<p align="center">
+  <img src="images/droneaid-logo.svg" width="154" height="30" alt="DroneAid" />
+</p>
 
-Open-source dual-radio, dual-band ExpressLRS receiver for FPV aircraft. OpenRX
-Gemini combines an ESP32-C3 with two LR1121 radio chains and two U.FL antenna
-interfaces for Gemini and Xrossband operation.
+# DroneAid OpenRX Gemini
+
+Open-source dual-radio, dual-band ExpressLRS receiver for FPV aircraft. DroneAid
+OpenRX Gemini combines an ESP32-C3 with two LR1121 radio chains and two U.FL
+antenna interfaces for Gemini and Xrossband operation.
 
 <p>
 <img src="images/front.png" width="400" alt="OpenRX Gemini front" />

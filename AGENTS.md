@@ -1,4 +1,4 @@
-# OpenRX Gemini
+# DroneAid OpenRX Gemini
 
 Open-source dual-radio, dual-band ExpressLRS receiver. An ESP32-C3 controls two
 LR1121 radio chains, each with its own U.FL antenna interface, for Gemini and
