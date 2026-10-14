@@ -1,0 +1,159 @@
+name: Sync upstream and rebrand
+
+on:
+  schedule:
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      force_rebrand:
+        description: Run the Boat rebranding pass even when upstream has no new commits
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-rebrand
+  cancel-in-progress: false
+
+jobs:
+  sync-and-rebrand:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      BOAT_API_KEY: ${{ secrets.BOAT_API_KEY }}
+      BOAT_CI_SNAPSHOT: ${{ secrets.BOAT_CI_SNAPSHOT_OPENRX_GEMINI }}
+    steps:
+      - name: Check out the fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for upstream changes and merge them
+        id: sync
+        shell: bash
+        env:
+          FORCE_REBRAND: ${{ inputs.force_rebrand }}
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/OpenDrone-hw/OpenRX-Gemini.git
+          git fetch upstream main
+          git fetch origin main
+          git switch --create automation/upstream-sync-rebrand origin/main
+
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            if [[ "$FORCE_REBRAND" == "true" ]]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+
+          git merge --no-edit upstream/main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install Boat CLI
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://boat.dev/api/boat/cli/download?platform=linux-x64&channel=prod" \
+            -o "$HOME/.local/bin/boat"
+          chmod +x "$HOME/.local/bin/boat"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Validate Boat configuration and sign in
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          test -n "$BOAT_API_KEY" || { echo 'Set the BOAT_API_KEY repository secret.' >&2; exit 1; }
+          test -n "$BOAT_CI_SNAPSHOT" || { echo 'Set the BOAT_CI_SNAPSHOT repository variable to a Boat snapshot with KiCad 10, pcbnew Python bindings, and the required fonts.' >&2; exit 1; }
+          printf '%s' "$BOAT_API_KEY" | boat login --key-stdin --json
+
+      - name: Create Boat sandbox
+        if: steps.sync.outputs.changed == 'true'
+        id: sandbox
+        run: |
+          id=$(boat new --from "$BOAT_CI_SNAPSHOT" --type small --ttl 7200 --json | jq -r 'select(.event == "ready") | .id')
+          test -n "$id"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+      - name: Copy the synchronized fork into Boat
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          SANDBOX_ID: ${{ steps.sandbox.outputs.id }}
+        run: |
+          git bundle create /tmp/source.bundle automation/upstream-sync-rebrand
+          boat scp /tmp/source.bundle "$SANDBOX_ID:/home/user/source.bundle"
+          boat exec "$SANDBOX_ID" --timeout 120 -- bash -lc 'git clone /home/user/source.bundle repo'
+
+      - name: Run the PCB rebranding skill in Claude Code
+        if: steps.sync.outputs.changed == 'true'
+        id: agent
+        env:
+          SANDBOX_ID: ${{ steps.sandbox.outputs.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          prompt=$(cat <<'PROMPT'
+          Work in /home/user/repo. Read AGENTS.md, README.md, and
+          .agents/skills/pcb-rebranding/SKILL.md (including its referenced case notes),
+          then follow that skill to maintain the existing DroneAid rebrand after this
+          upstream merge. Use images/droneaid-logo.svg as the brand asset and the
+          recorded OpenRX Gemini case notes as the authoritative existing brand and
+          stackup values. Preserve engineering identity and upstream technical work.
+          Follow the repository's KiCad rules exactly. Do not text-edit KiCad files,
+          do not change circuit/layout data, do not commit, and do not push. If the
+          required KiCad 10 tooling or GUI operation is unavailable, stop and report
+          the limitation without using an unsupported workaround. Refresh the board
+          renders only when the skill's required KiCad workflow can do so. Initialize
+          the hardware/KiCad-Library submodule and run the repository's required ERC
+          and DRC commands before reporting results. Summarize changes, check results,
+          and limitations in /home/user/rebrand-report.md.
+          PROMPT
+          )
+          result=$(boat prompt "$SANDBOX_ID" --provider claude --new --json "$prompt")
+          conversation_id=$(jq -r 'select(.conversationId != null) | .conversationId' <<< "$result" | tail -n1)
+          test -n "$conversation_id"
+          echo "conversation_id=$conversation_id" >> "$GITHUB_OUTPUT"
+
+          for attempt in $(seq 1 360); do
+            conversations=$(boat conversations "$SANDBOX_ID" --json)
+            running=$(jq -r --arg id "$conversation_id" 'select(.id == $id) | .running' <<< "$conversations" | tail -n1)
+            if [[ "$running" == "false" ]]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'Claude did not finish within 60 minutes.' >&2
+          exit 1
+
+      - name: Copy the agent result back
+        if: steps.sync.outputs.changed == 'true' && steps.agent.outcome == 'success'
+        env:
+          SANDBOX_ID: ${{ steps.sandbox.outputs.id }}
+        run: |
+          boat exec "$SANDBOX_ID" --timeout 120 -- bash -lc 'tar czf /tmp/result.tar.gz --exclude=.git -C /home/user/repo . && cp /home/user/rebrand-report.md /tmp/rebrand-report.md'
+          boat scp "$SANDBOX_ID:/tmp/result.tar.gz" /tmp/result.tar.gz
+          boat scp "$SANDBOX_ID:/tmp/rebrand-report.md" "$RUNNER_TEMP/rebrand-report.md"
+          mkdir -p /tmp/rebrand-result
+          tar xzf /tmp/result.tar.gz -C /tmp/rebrand-result
+          cp -a /tmp/rebrand-result/. .
+
+      - name: Open an upstream and rebrand pull request
+        if: steps.sync.outputs.changed == 'true' && steps.agent.outcome == 'success'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: automation/upstream-sync-rebrand
+          delete-branch: true
+          title: 'Sync upstream and maintain DroneAid rebrand'
+          commit-message: 'Sync upstream and maintain DroneAid rebrand'
+          body-path: ${{ runner.temp }}/rebrand-report.md
+
+      - name: Delete Boat sandbox
+        if: always() && steps.sandbox.outputs.id != ''
+        env:
+          SANDBOX_ID: ${{ steps.sandbox.outputs.id }}
+        run: boat delete "$SANDBOX_ID" --yes --json
