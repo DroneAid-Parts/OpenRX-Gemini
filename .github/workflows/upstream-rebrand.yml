@@ -96,7 +96,7 @@ jobs:
         run: |
           git bundle create /tmp/source.bundle automation/upstream-sync-rebrand
           boat scp /tmp/source.bundle "$SANDBOX_ID:/home/user/source.bundle"
-          boat exec "$SANDBOX_ID" --timeout 120 -- bash -lc 'git clone /home/user/source.bundle repo'
+          boat exec "$SANDBOX_ID" --timeout 120 -- bash -lc 'git clone --branch automation/upstream-sync-rebrand /home/user/source.bundle /home/user/repo'
 
       - name: Run the PCB rebranding skill in Claude Code
         if: steps.sync.outputs.changed == 'true'
@@ -128,7 +128,7 @@ jobs:
             cat "$prompt_output" >&2
             exit 1
           fi
-          conversation_id=$(jq -sr '[.[] | select(.conversationId != null) | .conversationId][-1] // empty' "$prompt_output")
+          conversation_id=$(jq -sr '[.[] | (.data.conversationId // .conversationId) | select(. != null)][-1] // empty' "$prompt_output")
           if [[ -z "$conversation_id" ]]; then
             cat "$prompt_output" >&2
             echo 'Boat did not return a Claude conversation ID.' >&2
