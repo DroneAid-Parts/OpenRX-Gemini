@@ -75,8 +75,18 @@ jobs:
         if: steps.sync.outputs.changed == 'true'
         id: sandbox
         run: |
-          id=$(boat new --from "$BOAT_CI_SNAPSHOT" --type small --ttl 7200 --json | jq -r 'select(.event == "ready") | .id')
-          test -n "$id"
+          set -euo pipefail
+          output_file=$(mktemp)
+          if ! boat new --from "$BOAT_CI_SNAPSHOT" --type small --ttl 7200 --json > "$output_file"; then
+            jq -c 'select(.event == "error") | {event, error, code, status}' "$output_file" || true
+            exit 1
+          fi
+          id=$(jq -sr '[.[] | select(.event == "ready") | .id][0] // empty' "$output_file")
+          if [[ -z "$id" ]]; then
+            jq -c 'select(.event == "error") | {event, error, code, status}' "$output_file" || true
+            echo 'Boat returned no ready sandbox event. Check that the named snapshot exists and is accessible to BOAT_API_KEY.' >&2
+            exit 1
+          fi
           echo "id=$id" >> "$GITHUB_OUTPUT"
 
       - name: Copy the synchronized fork into Boat
