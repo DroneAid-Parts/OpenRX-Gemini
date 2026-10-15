@@ -190,6 +190,19 @@ jobs:
           commit-message: 'Sync upstream and maintain DroneAid rebrand'
           body-path: ${{ runner.temp }}/rebrand-report.md
 
+      - name: Add rebrand report to job summary
+        if: steps.sync.outputs.changed == 'true' && steps.agent.outcome == 'success'
+        run: cat "$RUNNER_TEMP/rebrand-report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload rebrand report
+        if: steps.sync.outputs.changed == 'true' && steps.agent.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rebrand-report-${{ github.run_id }}
+          path: ${{ runner.temp }}/rebrand-report.md
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Delete Boat sandbox
         if: always() && steps.sandbox.outputs.id != ''
         env:
