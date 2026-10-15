@@ -68,7 +68,7 @@ jobs:
         if: steps.sync.outputs.changed == 'true'
         run: |
           test -n "$BOAT_API_KEY" || { echo 'Set the BOAT_API_KEY repository secret.' >&2; exit 1; }
-          test -n "$BOAT_CI_SNAPSHOT" || { echo 'Set the BOAT_CI_SNAPSHOT repository variable to a Boat snapshot with KiCad 10, pcbnew Python bindings, and the required fonts.' >&2; exit 1; }
+          test -n "$BOAT_CI_SNAPSHOT" || { echo 'Set the BOAT_CI_SNAPSHOT_OPENRX_GEMINI Actions secret to a Boat snapshot with KiCad 10, pcbnew Python bindings, and the required fonts.' >&2; exit 1; }
           printf '%s' "$BOAT_API_KEY" | boat login --key-stdin --json
 
       - name: Create Boat sandbox

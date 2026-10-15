@@ -9,8 +9,8 @@ OpenRX Gemini combines an ESP32-C3 with two LR1121 radio chains and two U.FL
 antenna interfaces for Gemini and Xrossband operation.
 
 <p>
-<img src="images/front.png" width="400" alt="OpenRX Gemini front" />
-<img src="images/back.png" width="400" alt="OpenRX Gemini back" />
+<img src="images/front.png" width="400" alt="DroneAid OpenRX Gemini front" />
+<img src="images/back.png" width="400" alt="DroneAid OpenRX Gemini back" />
 </p>
 
 [![Status](https://img.shields.io/endpoint?url=https://opendrone.be/api/status/OpenRX-Gemini.json)](https://github.com/OpenDrone-hw/.github/blob/main/CONTRIBUTING.md#the-life-of-a-project)
